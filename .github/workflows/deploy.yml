@@ -2,9 +2,9 @@ name: Deploy to Github Pages
 
 on:
     push:
-        branches: [main]
+        branches: [master]
     pull_request:
-        branches: [main]
+        branches: [master]
 
 jobs:
     build:
@@ -30,27 +30,18 @@ jobs:
 
             - uses: actions/setup-go@v5
               with:
-                  go-version: '^1.17.0'
+                  go-version: "^1.17.0"
             - run: go version
 
             - name: Setup Hugo
               uses: peaceiris/actions-hugo@v2
               with:
-                  hugo-version: 'latest'
+                  hugo-version: "latest"
                   # hugo-version: "0.139.4"
                   extended: true
 
             - name: Build
-              run: |
-                  if [ "${{ github.repository }}" == "HyunJay52/aqua-crew-project" ]; then
-                    echo "Building for Staging..."
-                    hugo --minify --gc --baseURL "https://hyunjay52.github.io/aqua-crew-project/"
-                    # Remove CNAME for staging to avoid domain conflict
-                    rm -f public/CNAME
-                  else
-                    echo "Building for Production..."
-                    hugo --minify --gc
-                  fi
+              run: hugo --minify --gc
 
             - name: Deploy 🚀
               uses: JamesIves/github-pages-deploy-action@v4
