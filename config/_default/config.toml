@@ -1,6 +1,8 @@
 # Change baseurl before deploy
 # baseurl = "https://aquacrew.co.kr"
-baseurl = "https://hyunjay52.github.io/aquacrew.github.io/"
+# baseurl = "https://hyunjay52.github.io/aquacrew.github.io/"
+baseurl = "https://aquacrew.kr"
+
 languageCode = "en-us"
 pagination.pagerSize = 50
 title = "아쿠아크루"
