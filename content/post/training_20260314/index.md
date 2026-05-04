@@ -9,7 +9,7 @@ tags:
     - 사이드킥
     - 드릴
 categories:
-    - 코칭훈련
+    - 자체훈련
 ---
 
 - 참가신청: [BAND LINK](https://band.us/band/93484357/schedule/4%2F93484357%2F961228579%2F19700101)
@@ -73,3 +73,4 @@ categories:
 ---
 
 > **🚩 총 훈련 거리: 3,000m**
+
