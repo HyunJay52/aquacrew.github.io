@@ -2,7 +2,7 @@
 title: 2026-06-07 자체훈련
 date: 2026-06-07
 description: 롱핀을 착용한 페이스 조절 및 인터벌 훈련
-image: 2026-06-07.jpg
+image: 2026-06-07.PNG
 tags:
     - 핀수영
 categories:
