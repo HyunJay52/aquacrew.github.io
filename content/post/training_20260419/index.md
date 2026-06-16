@@ -1,5 +1,5 @@
 ---
-title: 2026-04-19 언더스윔
+title: 2026-04-19 코칭훈련
 date: 2026-04-19
 description: 
 image: 2026-04-19.PNG

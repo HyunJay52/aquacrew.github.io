@@ -1,5 +1,5 @@
 ---
-title: 2026-03-29 언더스윔 훈련
+title: 2026-03-29 코칭훈련
 date: 2026-03-29
 description: 
 image: 2026-03-29.png
