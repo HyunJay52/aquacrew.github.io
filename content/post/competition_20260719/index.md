@@ -1,7 +1,7 @@
 ---
 title: 제 6회 성북구청장배 수영대회
 date: 2026-07-19
-image: 2026-07-19.jpg
+image: poster.png
 tags:
     - 성북구
     - 단수로
