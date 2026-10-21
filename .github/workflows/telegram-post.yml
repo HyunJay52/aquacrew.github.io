@@ -22,7 +22,7 @@ jobs:
               with:
                   python-version: "3.12"
 
-            - run: pip install anthropic
+            - run: pip install -r scripts/telegram/requirements.txt
 
             - name: Configure git
               run: |
