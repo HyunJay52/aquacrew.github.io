@@ -13,6 +13,6 @@ categories:
 - 앨범: [BAND LINK](https://band.us/band/93484357/album/83774003)
 
 
-![](aug64h.png)
+![](aug64h.jpg)
 
 ![](65228825085.jpg)

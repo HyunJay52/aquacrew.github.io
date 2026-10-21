@@ -2,6 +2,7 @@
 
 import json
 import os
+import urllib.error
 import urllib.request
 
 API = "https://api.telegram.org"
@@ -17,8 +18,12 @@ def call(method, **params):
         data=json.dumps(params).encode(),
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=30) as res:
-        return json.load(res)["result"]
+    try:
+        with urllib.request.urlopen(req, timeout=30) as res:
+            return json.load(res)["result"]
+    except urllib.error.HTTPError as err:
+        # Telegram 은 원인(예: "chat not found")을 응답 본문에 담아 보낸다
+        raise RuntimeError(f"Telegram {method} 실패 ({err.code}): {err.read().decode()}") from err
 
 
 def send(chat_id, text, reply_to=None):

@@ -100,7 +100,10 @@ async function handle(msg) {
 
 export default async function handler(req, res) {
     if (req.method !== "POST") return res.status(405).end();
-    if (req.headers["x-telegram-bot-api-secret-token"] !== process.env.TELEGRAM_WEBHOOK_SECRET) {
+    // 환경변수가 비어 있으면 헤더 없는 요청(undefined === undefined)이 통과하므로 함께 막는다
+    const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+    if (!secret || req.headers["x-telegram-bot-api-secret-token"] !== secret) {
+        if (!secret) console.error("TELEGRAM_WEBHOOK_SECRET is not set");
         return res.status(401).end();
     }
 
