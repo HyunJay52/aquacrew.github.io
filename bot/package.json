@@ -1,0 +1,8 @@
+{
+    "name": "aquacrew-telegram-bot",
+    "private": true,
+    "type": "module",
+    "engines": {
+        "node": ">=20"
+    }
+}
