@@ -1,0 +1,37 @@
+name: Telegram post
+
+# bot/api/telegram.js 가 Telegram 메시지를 받아 repository_dispatch 로 실행한다.
+on:
+    repository_dispatch:
+        types: [telegram-post, telegram-image]
+
+jobs:
+    handle:
+        runs-on: ubuntu-latest
+
+        permissions:
+            contents: write
+            pull-requests: write
+
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - uses: actions/setup-python@v5
+              with:
+                  python-version: "3.12"
+
+            - run: pip install anthropic
+
+            - name: Configure git
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+            - name: Convert and open PR
+              run: python scripts/telegram/handle.py
+              env:
+                  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+                  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+                  GH_TOKEN: ${{ github.token }}

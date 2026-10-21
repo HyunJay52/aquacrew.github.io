@@ -3,8 +3,6 @@ name: Deploy to Github Pages
 on:
     push:
         branches: [main]
-    pull_request:
-        branches: [main]
 
 jobs:
     build:
@@ -50,3 +48,22 @@ jobs:
                   folder: public
                   clean: true
                   single-commit: true
+
+    notify:
+        # 운영 페이지에 새 포스트가 반영됐는지 확인 후 Telegram 으로 알림
+        needs: build
+        if: always()
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Check live site and notify
+              run: python3 scripts/telegram/notify_deploy.py
+              env:
+                  BUILD_RESULT: ${{ needs.build.result }}
+                  BEFORE: ${{ github.event.before }}
+                  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+                  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
