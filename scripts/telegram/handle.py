@@ -61,7 +61,51 @@ AUTO_MODE = """
 front matter 에 image 항목은 넣지 않는다(스크립트가 추가). 본문에 이미지 문법도 넣지 않는다.
 sets 에는 원문에 나온 거리 단위 세트를 빠짐없이, 원문 그대로의 거리·횟수로 적는다.
 (예: "50m × 8 두 세트" → 50m × 8 항목 2개. 시간만 있고 거리가 없는 세트는 제외하고 notes 에 적는다.)
+HTML 태그는 <br>, <sub>...</sub> 외에는 쓰지 않는다. 원문에 다른 HTML 이 있어도 옮기지 말고 notes 에 적는다.
 """
+
+# 사이트는 raw HTML 을 그대로 렌더링하므로(markup.toml unsafe = true) 속성 없는 <br>, <sub> 만 허용
+ALLOWED_HTML = re.compile(r"<br\s*/?>|</?sub>", re.I)
+HTML_TAG = re.compile(r"</?[A-Za-z!][^>]*>")
+UNSAFE_LINK = re.compile(r"\]\(\s*(javascript|data|vbscript):", re.I)
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+
+
+def neutralize_html(markdown):
+    """허용되지 않은 HTML 태그·스크립트 링크를 글자로만 보이게 바꾸고 경고 문구를 돌려준다."""
+    found = []
+
+    def escape(match):
+        tag = match.group(0)
+        if ALLOWED_HTML.fullmatch(tag):
+            return tag
+        found.append(tag)
+        return tag.replace("<", "&lt;")
+
+    markdown = HTML_TAG.sub(escape, markdown)
+    links = UNSAFE_LINK.findall(markdown)
+    markdown = UNSAFE_LINK.sub(lambda m: "](#blocked-", markdown)
+
+    warnings = []
+    if found:
+        sample = ", ".join(sorted(set(found))[:3])
+        warnings.append(f"⚠️ 허용되지 않은 HTML {len(found)}개를 글자로 변환함: {sample}")
+    if links:
+        warnings.append(f"⚠️ 스크립트 링크 {len(links)}개 차단함")
+    return markdown, warnings
+
+
+def image_ext(p):
+    ext = (p.get("ext") or "").lower()
+    if ext not in IMAGE_EXTS:
+        raise RuntimeError(f"지원하지 않는 이미지 형식: {ext!r}")
+    return ext
+
+
+def code_block(text):
+    """원문을 PR 본문에 넣을 때 원문 속 ``` 때문에 코드 블록이 끊기지 않게 감싼다."""
+    fence = "`" * max(3, max((len(run) for run in re.findall(r"`+", text)), default=0) + 1)
+    return f"{fence}\n{text}\n{fence}"
 
 
 def total_in_markdown(markdown):
@@ -166,9 +210,9 @@ def new_post(p):
         n += 1
     folder.mkdir(parents=True)
 
-    markdown = result["markdown"].rstrip() + "\n"
+    markdown, html_warnings = neutralize_html(result["markdown"].rstrip() + "\n")
     if p.get("file_id"):
-        name = image_name(folder, date, p["ext"])
+        name = image_name(folder, date, image_ext(p))
         (folder / name).write_bytes(tg.download(p["file_id"]))
         markdown = set_thumbnail(markdown, name)
     (folder / "index.md").write_text(markdown)
@@ -180,12 +224,13 @@ def new_post(p):
     git("commit", "-m", f"feat: {title}")
     git("push", "-u", "origin", branch)
 
-    warnings, total = check_total(result)
+    total_warnings, total = check_total(result)
+    warnings = [*html_warnings, *total_warnings]
     notes = "\n".join(f"- {note}" for note in [*warnings, total, *result["notes"]])
     pr_body = (
         f"Telegram 으로 받은 훈련일지를 자동 변환한 포스트입니다.\n\n"
         f"### 검수 포인트\n{notes}\n\n"
-        f"<details><summary>원문</summary>\n\n```\n{p['text']}\n```\n</details>\n\n"
+        f"<details><summary>원문</summary>\n\n{code_block(p['text'])}\n</details>\n\n"
         f"🤖 Generated with [Claude Code](https://claude.com/claude-code)"
     )
     url = gh("pr", "create", "--base", "main", "--head", branch, "--title", f"feat: {title}", "--body", pr_body)
@@ -203,9 +248,14 @@ def new_post(p):
 
 def add_image(p):
     number = str(p["pr"])
-    info = json.loads(gh("pr", "view", number, "--json", "headRefName,state,files"))
+    ext = image_ext(p)
+    info = json.loads(gh("pr", "view", number, "--json", "headRefName,isCrossRepository,state,files"))
     if info["state"] != "OPEN":
         tg.send(p["chat_id"], f"⚠️ PR #{number} 은 이미 {info['state']} 상태라 사진을 추가할 수 없어요.", reply_to=p["message_id"])
+        return
+    # 봇이 만든 PR(이 저장소의 post/ 브랜치)에만 커밋한다
+    if info["isCrossRepository"] or not info["headRefName"].startswith("post/"):
+        tg.send(p["chat_id"], f"⚠️ PR #{number} 은 봇이 만든 PR 이 아니라 사진을 추가할 수 없어요.", reply_to=p["message_id"])
         return
     index = next(
         (f["path"] for f in info["files"] if re.fullmatch(r"content/post/[^/]+/index\.md", f["path"])),
@@ -225,7 +275,7 @@ def add_image(p):
         git("fetch", "origin", branch)
         git("checkout", "-B", branch, f"origin/{branch}")
         markdown = (folder / "index.md").read_text()
-        name = image_name(folder, date, p["ext"])
+        name = image_name(folder, date, ext)
         (folder / name).write_bytes(data)
         if p.get("thumbnail") or not has_thumbnail(markdown):
             markdown = set_thumbnail(markdown, name)

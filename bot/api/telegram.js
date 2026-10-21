@@ -46,15 +46,19 @@ async function dispatch(eventType, payload) {
     if (!res.ok) throw new Error(`GitHub dispatch ${res.status}: ${await res.text()}`);
 }
 
+// 사이트에 올릴 수 있는 이미지 형식. SVG 는 스크립트를 담을 수 있어 받지 않는다
+const IMAGE_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+};
+
 // 사진(압축 전송) 또는 이미지 파일(원본 전송)에서 file_id 와 확장자를 꺼낸다
 function imageOf(msg) {
     if (msg.photo?.length) return { file_id: msg.photo[msg.photo.length - 1].file_id, ext: ".jpg" };
-    const doc = msg.document;
-    if (doc?.mime_type?.startsWith("image/")) {
-        const ext = (doc.file_name?.match(/\.[A-Za-z0-9]+$/)?.[0] ?? ".jpg").toLowerCase();
-        return { file_id: doc.file_id, ext };
-    }
-    return null;
+    const ext = IMAGE_TYPES[msg.document?.mime_type];
+    return ext ? { file_id: msg.document.file_id, ext } : null;
 }
 
 async function handle(msg) {
@@ -71,6 +75,10 @@ async function handle(msg) {
 
     if (text.startsWith("/start") || text.startsWith("/help")) {
         return reply(msg, HELP);
+    }
+
+    if (msg.document?.mime_type?.startsWith("image/") && !image) {
+        return reply(msg, "jpg, png, webp, gif 이미지만 올릴 수 있어요. (HEIC 는 사진으로 보내거나 jpg 로 변환해주세요)");
     }
 
     const base = { chat_id: msg.chat.id, message_id: msg.message_id };
