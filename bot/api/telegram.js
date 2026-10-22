@@ -10,10 +10,20 @@
 const HELP = [
     "🏊 AquaCrew 훈련일지 봇",
     "",
-    "• 새 글: 훈련일지 텍스트를 그대로 보내주세요. (사진 1장 + 캡션으로 보내면 그 사진이 썸네일)",
-    "• 사진 추가: 봇이 보낸 'PR #번호' 메시지에 답장으로 사진을 보내주세요.",
-    "  캡션에 '썸네일' 이라고 쓰면 썸네일로 지정됩니다.",
-    "• PR 을 검수 후 GitHub 에서 Merge 하면 배포되고, 배포 결과를 다시 알려드려요.",
+    "📝 새 글",
+    "• 훈련일지 텍스트를 그대로 보내주세요. (사진 1장 + 캡션으로 보내면 그 사진이 썸네일)",
+    "",
+    "✏️ 수정 — 봇 메시지('PR #번호', 배포 완료 알림, /글 검색 결과)에 답장",
+    "• 텍스트로 수정 요청: 예) 날짜를 10월 19일로, 메인셋 인터벌 1'40\"로 수정",
+    "• 사진 추가: 사진 전송 / 썸네일 변경: 사진 + 캡션 '썸네일'",
+    "• /사진 — 사진 번호 목록",
+    "• /삭제 2 3 — 2, 3번 사진 삭제",
+    "• /썸네일 2 — 2번 사진을 썸네일로",
+    "• 사진 + 캡션 '/교체 2' — 2번 사진 교체",
+    "",
+    "🔎 /글 2026-10-18 — 예전 글 찾기 (날짜 또는 제목 일부)",
+    "",
+    "모든 변경은 PR 로 올라가고, GitHub 에서 검수 후 Merge 하면 배포·알림됩니다.",
 ].join("\n");
 
 async function telegram(method, body) {
@@ -61,6 +71,38 @@ function imageOf(msg) {
     return ext ? { file_id: msg.document.file_id, ext } : null;
 }
 
+// 답장한 봇 메시지에서 수정 대상을 찾는다: 'PR #번호' 또는 '[post:폴더]'
+function targetOf(replied) {
+    const text = replied?.text ?? replied?.caption ?? "";
+    const pr = text.match(/PR #(\d+)/)?.[1];
+    if (pr) return { pr: Number(pr) };
+    const post = text.match(/\[post:([A-Za-z0-9_-]+)\]/)?.[1];
+    return post ? { post } : null;
+}
+
+const numbersOf = (s) => (s.match(/\d+/g) ?? []).map(Number).slice(0, 20);
+
+// 답장 내용으로 수정 종류를 정한다
+function editOf(text, image) {
+    if (image) {
+        const replace = text.match(/^\/교체\s*(\d+)/);
+        if (replace) return { op: "replace", indexes: [Number(replace[1])] };
+        return { op: text.includes("썸네일") ? "thumbnail" : "add" };
+    }
+    if (text.startsWith("/사진")) return { op: "list" };
+    if (text.startsWith("/삭제")) {
+        const indexes = numbersOf(text);
+        return indexes.length ? { op: "delete", indexes } : { error: "삭제할 사진 번호를 적어주세요. 예) /삭제 2" };
+    }
+    if (text.startsWith("/썸네일")) {
+        const [n] = numbersOf(text);
+        return n ? { op: "thumbnail_index", indexes: [n] } : { error: "사진 번호를 적어주세요. 예) /썸네일 2" };
+    }
+    if (text.startsWith("/")) return { error: "알 수 없는 명령이에요. /help 를 확인해주세요." };
+    if (text.length < 2) return { error: "수정할 내용을 적어주세요." };
+    return { op: "text", text };
+}
+
 async function handle(msg) {
     const allowed = (process.env.ALLOWED_CHAT_IDS ?? "").split(",").map((s) => s.trim());
     if (!allowed.includes(String(msg.chat.id))) {
@@ -70,8 +112,6 @@ async function handle(msg) {
 
     const text = (msg.text ?? msg.caption ?? "").trim();
     const image = imageOf(msg);
-    const replied = msg.reply_to_message;
-    const pr = (replied?.text ?? replied?.caption ?? "").match(/PR #(\d+)/)?.[1];
 
     if (text.startsWith("/start") || text.startsWith("/help")) {
         return reply(msg, HELP);
@@ -83,19 +123,30 @@ async function handle(msg) {
 
     const base = { chat_id: msg.chat.id, message_id: msg.message_id };
 
-    if (image && pr) {
-        await dispatch("telegram-image", {
+    if (text.startsWith("/글")) {
+        const query = text.slice(2).trim();
+        if (!query) return reply(msg, "예) /글 2026-10-18 또는 /글 송년회");
+        await dispatch("telegram-edit", { ...base, op: "find", text: query });
+        return;
+    }
+
+    const target = targetOf(msg.reply_to_message);
+    if (target) {
+        const edit = editOf(text, image);
+        if (edit.error) return reply(msg, edit.error);
+        await dispatch("telegram-edit", {
             ...base,
-            pr: Number(pr),
-            file_id: image.file_id,
-            ext: image.ext,
-            thumbnail: text.includes("썸네일"),
+            ...target,
+            ...edit,
+            file_id: image?.file_id ?? null,
+            ext: image?.ext ?? null,
         });
+        if (edit.op === "text") return reply(msg, "✏️ 수정 요청을 접수했어요. 반영 후 알려드릴게요… (1분 내외)");
         return;
     }
 
     if (image && !text) {
-        return reply(msg, "사진은 봇이 보낸 'PR #번호' 메시지에 답장으로 보내주세요.");
+        return reply(msg, "사진은 봇 메시지('PR #번호' 또는 배포 완료 알림)에 답장으로 보내주세요.");
     }
 
     if (text.length < 20) {
