@@ -60,7 +60,7 @@ def main():
     if not posts:
         return  # 테마 업데이트 등 콘텐츠 변경이 없는 배포는 알리지 않음
 
-    pending = {title_of(p) for p in posts}
+    pending = {title_of(p): p.parent.name for p in posts}
     found = {}
     deadline = time.time() + TIMEOUT
     while pending and time.time() < deadline:
@@ -72,13 +72,14 @@ def main():
                 print(f"check failed: {err}")
                 continue
             if url:
-                found[title] = url
-                pending.discard(title)
+                found[title] = (pending.pop(title), url)
 
-    lines = [f"✅ {title}\n{url}" for title, url in found.items()]
-    lines += [f"⚠️ {title} — {TIMEOUT // 60}분 안에 운영 페이지에서 확인되지 않음" for title in pending]
-    head = "🚀 운영 페이지 반영 완료" if not pending else "🚀 배포는 끝났지만 일부 확인 필요"
-    tg.send(chat_id, f"{head}\n\n" + "\n\n".join(lines) + f"\n\n로그: {tg.run_url()}")
+    # 글마다 따로 보내 [post:폴더] 표식이 있는 메시지에 답장하면 그 글을 수정할 수 있게 한다
+    hint = "✏️ 수정하려면 이 메시지에 답장하세요. (/help 참고)"
+    for title, (folder, url) in found.items():
+        tg.send(chat_id, f"🚀 운영 페이지 반영 완료\n{title}\n{url}\n[post:{folder}]\n{hint}")
+    for title, folder in pending.items():
+        tg.send(chat_id, f"⚠️ {title} — {TIMEOUT // 60}분 안에 운영 페이지에서 확인되지 않음\n[post:{folder}]\n로그: {tg.run_url()}")
 
 
 if __name__ == "__main__":
