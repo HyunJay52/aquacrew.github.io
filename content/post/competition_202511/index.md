@@ -10,5 +10,6 @@ categories:
 ---
 
 -   대회사진/경기영상: [BAND LINK](https://band.us/band/93484357/album/89917268)
+-   대회 결과 : 준우승 🏅
 
 ![](poster.PNG)
