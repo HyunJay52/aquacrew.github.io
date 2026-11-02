@@ -1,0 +1,48 @@
+{{- /*
+    hugo-theme-stack v3.34.2 의 article/components/header.html 을 덮어쓴다.
+    변경점: 이미지 링크에 원본 이미지 주소·크기(data-original-*)를 추가해
+    글 상세 페이지에서 썸네일을 누르면 잘리지 않은 원본을 볼 수 있게 한다 (footer/custom.html).
+    테마를 업데이트할 때 원본 파일과 달라진 점이 있는지 확인할 것.
+*/ -}}
+<header class="article-header">
+    {{- $image := partialCached "helper/image" (dict "Context" . "Type" "article") .RelPermalink "article" -}}
+    {{ if $image.exists }}
+        <div class="article-image">
+            <a href="{{ .RelPermalink }}"
+                {{ if $image.resource }}
+                    data-original-src="{{ $image.resource.RelPermalink }}"
+                    data-original-width="{{ $image.resource.Width }}"
+                    data-original-height="{{ $image.resource.Height }}"
+                {{ else }}
+                    data-original-src="{{ $image.permalink }}"
+                {{ end }}>
+                {{ if $image.resource }}
+                    {{- $Permalink := $image.resource.RelPermalink -}}
+                    {{- $Width := $image.resource.Width -}}
+                    {{- $Height := $image.resource.Height -}}
+                    {{- $Srcset := "" -}}
+
+                    {{- if (default true .Page.Site.Params.imageProcessing.cover.enabled) -}}
+                        {{- $thumbnail := $image.resource.Resize "800x" -}}
+                        {{- $thumbnailRetina := $image.resource.Resize "1600x" -}}
+                        {{- $Srcset = printf "%s 800w, %s 1600w" $thumbnail.RelPermalink $thumbnailRetina.RelPermalink -}}
+                        {{- $Permalink = $thumbnail.RelPermalink -}}
+                        {{- $Width = $thumbnail.Width -}}
+                        {{- $Height = $thumbnail.Height -}}
+                    {{- end -}}
+
+                    <img src="{{ $Permalink }}"
+                        {{ with $Srcset }}srcset="{{ . }}"{{ end }}
+                        width="{{ $Width }}"
+                        height="{{ $Height }}"
+                        loading="lazy"
+                        alt="Featured image of post {{ .Title }}" />
+                {{ else }}
+                    <img src="{{ $image.permalink }}" loading="lazy" alt="Featured image of post {{ .Title }}" />
+                {{ end }}
+            </a>
+        </div>
+    {{ end }}
+
+    {{ partialCached "article/components/details" . .RelPermalink }}
+</header>

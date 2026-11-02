@@ -1,0 +1,51 @@
+{{- /* 글 상세 페이지의 썸네일(대표 이미지)을 누르면 잘리지 않은 원본을 크게 보여준다 */ -}}
+{{ if .IsPage }}
+<div class="thumb-viewer" id="thumb-viewer" role="dialog" aria-modal="true" aria-label="대표 이미지 원본 보기" hidden>
+    <img class="thumb-viewer__image" alt="" />
+    <div class="thumb-viewer__bar">
+        <a class="thumb-viewer__original" target="_blank" rel="noopener">원본 파일 열기</a>
+        <button type="button" class="thumb-viewer__close" aria-label="닫기">닫기 ✕</button>
+    </div>
+</div>
+<script>
+    (() => {
+        const link = document.querySelector(".main-article .article-image a[data-original-src]");
+        const viewer = document.getElementById("thumb-viewer");
+        if (!link || !viewer) return;
+
+        const image = viewer.querySelector(".thumb-viewer__image");
+        const original = viewer.querySelector(".thumb-viewer__original");
+        const close = viewer.querySelector(".thumb-viewer__close");
+        const src = link.dataset.originalSrc;
+
+        link.classList.add("thumb-viewer__trigger");
+        link.setAttribute("aria-label", "대표 이미지 원본 보기");
+
+        const hide = () => {
+            viewer.hidden = true;
+            document.documentElement.classList.remove("thumb-viewer-open");
+            document.removeEventListener("keydown", onKey);
+            link.focus();
+        };
+        const onKey = (e) => {
+            if (e.key === "Escape") hide();
+        };
+
+        link.addEventListener("click", (e) => {
+            e.preventDefault();
+            image.src = src;
+            image.alt = link.querySelector("img")?.alt ?? "";
+            original.href = src;
+            viewer.hidden = false;
+            document.documentElement.classList.add("thumb-viewer-open");
+            document.addEventListener("keydown", onKey);
+            close.focus();
+        });
+        close.addEventListener("click", hide);
+        // 이미지·버튼 바깥(어두운 배경)을 누르면 닫기
+        viewer.addEventListener("click", (e) => {
+            if (e.target === viewer) hide();
+        });
+    })();
+</script>
+{{ end }}
