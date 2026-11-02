@@ -172,7 +172,7 @@ def convert(text):
         f"오늘 날짜: {today}\n\n"
         f"<latest_post>\n{latest_example()}\n</latest_post>\n\n"
         f"<training_log>\n{text}\n</training_log>\n\n"
-        "위 훈련일지를 latest_post 와 같은 형식의 index.md 로 변환해줘.",
+        "위 글을 index.md 로 변환해줘. 훈련일지면 latest_post 와 같은 형식, 대회·이벤트면 지침의 대회·이벤트 글 형식을 따른다.",
     )
 
 
@@ -206,12 +206,24 @@ def image_name(folder, date, ext):
     return f"{date}-{n:02d}{ext}"
 
 
+FOLDER_PREFIX = {"대회": "competition", "이벤트": "event"}
+BODY_PHOTO = "#본문"
+
+
+def category(markdown):
+    match = re.search(r"^categories:\s*\n\s*-\s*['\"]?([^'\"\n]+)", markdown, re.M)
+    return match.group(1).strip() if match else ""
+
+
 def new_post(p):
-    result = convert(p["text"])
+    # 캡션에 '#본문' 이 있으면 함께 보낸 사진을 썸네일이 아닌 본문 사진으로 넣는다
+    photo_in_body = BODY_PHOTO in p["text"]
+    result = convert(p["text"].replace(BODY_PHOTO, "").strip())
     date = result["date"]
     datetime.date.fromisoformat(date)  # 형식 검증
 
-    slug = f"training_{date.replace('-', '')}"
+    kind = category(result["markdown"])
+    slug = f"{FOLDER_PREFIX.get(kind, 'training')}_{date.replace('-', '')}"
     folder = POSTS / slug
     n = 2
     while folder.exists():
@@ -223,7 +235,10 @@ def new_post(p):
     if p.get("file_id"):
         name = image_name(folder, date, image_ext(p))
         (folder / name).write_bytes(tg.download(p["file_id"]))
-        markdown = set_thumbnail(markdown, name)
+        if photo_in_body:
+            markdown = markdown.rstrip() + f"\n\n![]({name})\n"
+        else:
+            markdown = set_thumbnail(markdown, name)
     (folder / "index.md").write_text(markdown)
 
     title = front_matter_value(markdown, "title") or f"{date} 훈련일지"
@@ -233,9 +248,10 @@ def new_post(p):
     git("commit", "-m", f"feat: {title}")
     git("push", "-u", "origin", branch)
 
-    total_warnings, total = check_total(result)
+    # 대회·이벤트처럼 세트가 없는 글은 합계 검사를 하지 않는다
+    total_warnings, total = check_total(result) if kind not in FOLDER_PREFIX else ([], None)
     warnings = [*html_warnings, *total_warnings]
-    notes = "\n".join(f"- {note}" for note in [*warnings, total, *result["notes"]])
+    notes = "\n".join(f"- {note}" for note in [*warnings, total, *result["notes"]] if note)
     pr_body = (
         f"Telegram 으로 받은 훈련일지를 자동 변환한 포스트입니다.\n\n"
         f"### 검수 포인트\n{notes}\n\n"
