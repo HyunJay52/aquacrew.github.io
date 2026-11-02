@@ -3,7 +3,7 @@ name: Telegram post
 # bot/api/telegram.js 가 Telegram 메시지를 받아 repository_dispatch 로 실행한다.
 on:
     repository_dispatch:
-        types: [telegram-post, telegram-image]
+        types: [telegram-post, telegram-edit]
 
 jobs:
     handle:

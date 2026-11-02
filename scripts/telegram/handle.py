@@ -1,6 +1,8 @@
-"""Telegram 으로 받은 훈련일지를 Hugo 포스트로 변환해 PR 을 만들거나, 기존 PR 에 사진을 추가한다.
+"""Telegram 으로 받은 훈련일지를 Hugo 포스트로 변환해 PR 을 만든다.
 
-repository_dispatch 이벤트(telegram-post / telegram-image)로 실행된다.
+repository_dispatch 이벤트로 실행된다.
+  telegram-post  새 글 변환 → PR 생성 (이 파일)
+  telegram-edit  검수 중이거나 게시된 글의 텍스트·사진 수정 (edit.py)
 """
 
 import datetime
@@ -144,31 +146,34 @@ def latest_example():
     return Path(paths[-1]).read_text() if paths else ""
 
 
-def convert(text):
+def ask(system, content):
+    """Claude 에 SCHEMA 형식의 JSON 결과를 요청한다."""
     client = anthropic.Anthropic()
-    today = datetime.date.today().isoformat()
     response = client.messages.create(
         model=MODEL,
         max_tokens=16000,
         thinking={"type": "adaptive"},
         output_config={"effort": "high", "format": {"type": "json_schema", "schema": SCHEMA}},
-        system=SKILL.read_text() + AUTO_MODE,
-        messages=[{
-            "role": "user",
-            "content": (
-                f"오늘 날짜: {today}\n\n"
-                f"<latest_post>\n{latest_example()}\n</latest_post>\n\n"
-                f"<training_log>\n{text}\n</training_log>\n\n"
-                "위 훈련일지를 latest_post 와 같은 형식의 index.md 로 변환해줘."
-            ),
-        }],
+        system=system,
+        messages=[{"role": "user", "content": content}],
     )
     if response.stop_reason == "refusal":
-        raise RuntimeError("Claude 가 변환을 거절했습니다.")
+        raise RuntimeError("Claude 가 요청을 거절했습니다.")
     if response.stop_reason == "max_tokens":
-        raise RuntimeError("변환 결과가 너무 길어 잘렸습니다.")
+        raise RuntimeError("결과가 너무 길어 잘렸습니다.")
     body = next(block.text for block in response.content if block.type == "text")
     return json.loads(body)
+
+
+def convert(text):
+    today = datetime.date.today().isoformat()
+    return ask(
+        SKILL.read_text() + AUTO_MODE,
+        f"오늘 날짜: {today}\n\n"
+        f"<latest_post>\n{latest_example()}\n</latest_post>\n\n"
+        f"<training_log>\n{text}\n</training_log>\n\n"
+        "위 글을 index.md 로 변환해줘. 훈련일지면 latest_post 와 같은 형식, 대회·이벤트면 지침의 대회·이벤트 글 형식을 따른다.",
+    )
 
 
 def front_matter_value(markdown, key):
@@ -193,16 +198,32 @@ def has_thumbnail(markdown):
 
 
 def image_name(folder, date, ext):
-    count = len([p for p in folder.iterdir() if p.name != "index.md"])
-    return f"{date}-{count + 1:02d}{ext}"
+    """date-01.jpg 부터 아직 쓰지 않은 번호의 파일명 (사진을 지운 뒤에도 겹치지 않게)."""
+    used = {p.stem.lower() for p in folder.iterdir()}
+    n = 1
+    while f"{date}-{n:02d}".lower() in used:
+        n += 1
+    return f"{date}-{n:02d}{ext}"
+
+
+FOLDER_PREFIX = {"대회": "competition", "이벤트": "event"}
+BODY_PHOTO = "#본문"
+
+
+def category(markdown):
+    match = re.search(r"^categories:\s*\n\s*-\s*['\"]?([^'\"\n]+)", markdown, re.M)
+    return match.group(1).strip() if match else ""
 
 
 def new_post(p):
-    result = convert(p["text"])
+    # 캡션에 '#본문' 이 있으면 함께 보낸 사진을 썸네일이 아닌 본문 사진으로 넣는다
+    photo_in_body = BODY_PHOTO in p["text"]
+    result = convert(p["text"].replace(BODY_PHOTO, "").strip())
     date = result["date"]
     datetime.date.fromisoformat(date)  # 형식 검증
 
-    slug = f"training_{date.replace('-', '')}"
+    kind = category(result["markdown"])
+    slug = f"{FOLDER_PREFIX.get(kind, 'training')}_{date.replace('-', '')}"
     folder = POSTS / slug
     n = 2
     while folder.exists():
@@ -214,7 +235,10 @@ def new_post(p):
     if p.get("file_id"):
         name = image_name(folder, date, image_ext(p))
         (folder / name).write_bytes(tg.download(p["file_id"]))
-        markdown = set_thumbnail(markdown, name)
+        if photo_in_body:
+            markdown = markdown.rstrip() + f"\n\n![]({name})\n"
+        else:
+            markdown = set_thumbnail(markdown, name)
     (folder / "index.md").write_text(markdown)
 
     title = front_matter_value(markdown, "title") or f"{date} 훈련일지"
@@ -224,9 +248,10 @@ def new_post(p):
     git("commit", "-m", f"feat: {title}")
     git("push", "-u", "origin", branch)
 
-    total_warnings, total = check_total(result)
+    # 대회·이벤트처럼 세트가 없는 글은 합계 검사를 하지 않는다
+    total_warnings, total = check_total(result) if kind not in FOLDER_PREFIX else ([], None)
     warnings = [*html_warnings, *total_warnings]
-    notes = "\n".join(f"- {note}" for note in [*warnings, total, *result["notes"]])
+    notes = "\n".join(f"- {note}" for note in [*warnings, total, *result["notes"]] if note)
     pr_body = (
         f"Telegram 으로 받은 훈련일지를 자동 변환한 포스트입니다.\n\n"
         f"### 검수 포인트\n{notes}\n\n"
@@ -240,59 +265,10 @@ def new_post(p):
         p["chat_id"],
         f"{'⚠️' if warnings else '✅'} PR #{number} 생성: {title}\n{url}\n\n"
         f"검수 포인트\n{notes}\n\n"
-        f"📷 사진 추가: 이 메시지에 답장으로 사진 전송 (캡션 '썸네일' → 썸네일 지정)\n"
+        f"✏️ 이 메시지에 답장으로 수정 요청·사진 추가 (/help 참고)\n"
         f"🔀 검수 후 GitHub 에서 Merge 하면 배포됩니다.",
         reply_to=p["message_id"],
     )
-
-
-def add_image(p):
-    number = str(p["pr"])
-    ext = image_ext(p)
-    info = json.loads(gh("pr", "view", number, "--json", "headRefName,isCrossRepository,state,files"))
-    if info["state"] != "OPEN":
-        tg.send(p["chat_id"], f"⚠️ PR #{number} 은 이미 {info['state']} 상태라 사진을 추가할 수 없어요.", reply_to=p["message_id"])
-        return
-    # 봇이 만든 PR(이 저장소의 post/ 브랜치)에만 커밋한다
-    if info["isCrossRepository"] or not info["headRefName"].startswith("post/"):
-        tg.send(p["chat_id"], f"⚠️ PR #{number} 은 봇이 만든 PR 이 아니라 사진을 추가할 수 없어요.", reply_to=p["message_id"])
-        return
-    index = next(
-        (f["path"] for f in info["files"] if re.fullmatch(r"content/post/[^/]+/index\.md", f["path"])),
-        None,
-    )
-    if not index:
-        raise RuntimeError(f"PR #{number} 에서 포스트(index.md)를 찾지 못했습니다.")
-
-    branch = info["headRefName"]
-    data = tg.download(p["file_id"])
-    folder = ROOT / Path(index).parent
-    date = re.search(r"(\d{4})(\d{2})(\d{2})", folder.name).groups()
-    date = "-".join(date)
-
-    # 앨범으로 여러 장이 동시에 오면 push 가 충돌할 수 있어 최신 브랜치 기준으로 재시도
-    for attempt in range(5):
-        git("fetch", "origin", branch)
-        git("checkout", "-B", branch, f"origin/{branch}")
-        markdown = (folder / "index.md").read_text()
-        name = image_name(folder, date, ext)
-        (folder / name).write_bytes(data)
-        if p.get("thumbnail") or not has_thumbnail(markdown):
-            markdown = set_thumbnail(markdown, name)
-            kind = "썸네일"
-        else:
-            markdown = markdown.rstrip() + f"\n\n![]({name})\n"
-            kind = "본문 이미지"
-        (folder / "index.md").write_text(markdown)
-        git("add", str(folder))
-        git("commit", "-m", f"feat: {name} 이미지 추가")
-        try:
-            git("push", "origin", branch)
-            break
-        except subprocess.CalledProcessError:
-            if attempt == 4:
-                raise
-    tg.send(p["chat_id"], f"🖼 PR #{number} 에 {kind} 추가: {name}", reply_to=p["message_id"])
 
 
 def main():
@@ -301,8 +277,10 @@ def main():
     try:
         if event["action"] == "telegram-post":
             new_post(payload)
-        elif event["action"] == "telegram-image":
-            add_image(payload)
+        elif event["action"] == "telegram-edit":
+            import edit
+
+            edit.run(payload)
     except Exception as err:
         detail = err.stderr if isinstance(err, subprocess.CalledProcessError) else err
         tg.send(payload["chat_id"], f"⚠️ 처리 실패: {detail}\n로그: {tg.run_url()}", reply_to=payload["message_id"])
